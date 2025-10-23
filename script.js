@@ -379,7 +379,7 @@
 			this.confessions.unshift(confession);
 			this.saveConfessions();
 			this.renderConfession(confession);
-			this.addLine('Confession stored locally (offline mode)', 'success');
+			// Removed the "Confession stored locally (offline mode)" message per request
 		}
 
 		sanitize(input) {
