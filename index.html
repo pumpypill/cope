@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com;">
+    <meta name="description" content="Cope Terminal - Anonymous confessions for pump.fun traders">
+    <title>Cope Terminal</title>
+    <link rel="stylesheet" href="./styles.css">
+    <!-- Add favicon -->
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+</head>
+<body>
+    <header class="site-header">
+        <div class="header-content">
+            <div class="header-logo">Cope Terminal</div>
+            <div class="header-tagline">Anonymous reflections</div>
+        </div>
+    </header>
+
+    <main class="terminal-container">
+        <div class="terminal" role="main" aria-label="Confession Terminal">
+            <header class="terminal-header">
+                <span class="terminal-title">cope@solana:~$</span>
+                <div class="terminal-controls" aria-hidden="true">
+                    <span class="control minimize" title="Minimize">-</span>
+                    <span class="control maximize" title="Maximize">□</span>
+                    <span class="control close" title="Close">×</span>
+                </div>
+            </header>
+            
+            <div class="terminal-body">
+                <div class="output" id="output" aria-live="polite" tabindex="0">
+                    <div class="line">Welcome to Cope Terminal - Anonymous reflections</div>
+                    <div class="line">Type 'help' for available commands</div>
+                    <div class="line">Loading confession feed...</div>
+                    <div class="line prompt-line">
+                        <span class="prompt">user@cope:~$ </span>
+                    </div>
+                </div>
+                
+                <div class="input-line">
+                    <label for="terminal-input" class="prompt">user@cope:~$ </label>
+                    <input type="text" id="terminal-input" class="terminal-input" autocomplete="off" aria-label="Terminal input" autofocus>
+                    <span class="cursor" aria-hidden="true">█</span>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Add defer to improve page loading -->
+    <script src="./script.js" defer></script>
+</body>
+</html>

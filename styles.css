@@ -1,0 +1,313 @@
+@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400;500&display=swap');
+
+/* Use CSS variables for better maintainability */
+:root {
+  --background-color: #0c1a2b;
+  --header-bg: #12294a;
+  --terminal-bg: #0e2340;
+  --terminal-header-bg: #1a2d4d;
+  --border-color: #23406c;
+  --text-color: #d7eaff;
+  --output-color: #b6c9e6;
+  --prompt-color: #00bfff;
+  --command-color: #4ec9b0;
+  --recognized-command: #ffea00;
+  --error-color: #ff5370;
+  --success-color: #50fa7b;
+  --confession-color: #ffe066;
+  --meta-color: #7fa2c7;
+  
+  /* Control colors */
+  --minimize: #ffbd2e;
+  --maximize: #28ca42;
+  --close: #ff5f56;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Add focus styles for accessibility */
+*:focus {
+  outline: 2px solid var(--text-color);
+  outline-offset: 2px;
+}
+
+body {
+  background: linear-gradient(135deg, #0c1a2b 0%, #12294a 100%);
+  font-family: 'Fira Code', 'Courier New', 'Consolas', monospace;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  color: var(--text-color);
+  line-height: 1.6;
+}
+
+/* Site header styles */
+.site-header {
+  background-color: var(--header-bg);
+  padding: 15px 20px;
+  border-bottom: 1px solid var(--border-color);
+  text-align: center;
+}
+
+.header-content {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header-logo {
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: 2px;
+  color: var(--text-color);
+}
+
+.header-tagline {
+  font-size: 14px;
+  color: var(--meta-color);
+  margin-top: 5px;
+}
+
+/* Terminal container for centering */
+.terminal-container {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 20px;
+}
+
+/* Use more efficient selectors */
+.terminal {
+  width: 90%;
+  max-width: 1000px;
+  height: 75vh; /* Slightly reduced height to accommodate header */
+  background: linear-gradient(120deg, #0e2340 60%, #193c6b 100%);
+  border: 2px solid var(--border-color);
+  box-shadow: 0 0 32px 0 rgba(0, 191, 255, 0.15), 0 2px 8px 0 #000a;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.terminal-header {
+  background: var(--terminal-header-bg);
+  padding: 10px 15px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 2px solid var(--border-color);
+  box-shadow: 0 2px 8px 0 #0004;
+}
+
+.terminal-title {
+  color: #00bfff;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-shadow: 0 1px 2px #0008;
+}
+
+.terminal-controls {
+  display: flex;
+  gap: 10px;
+}
+
+.control {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.minimize { background: var(--minimize); color: #000; }
+.maximize { background: var(--maximize); color: #000; }
+.close { background: var(--close); color: #000; }
+
+/* Add hover effects */
+.control:hover {
+  filter: brightness(0.9);
+}
+
+.terminal-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 15px;
+  overflow: hidden; /* Prevent double scrollbars */
+  background: linear-gradient(120deg, #0e2340 80%, #1a2d4d 100%);
+  border-radius: 0 0 8px 8px;
+}
+
+.output {
+  flex: 1;
+  overflow-y: auto;
+  color: var(--text-color);
+  font-family: 'Fira Code', 'Consolas', 'Courier New', monospace;
+  background: transparent;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.line {
+  margin-bottom: 5px;
+  word-wrap: break-word;
+  font-family: inherit;
+  letter-spacing: 0.01em;
+}
+
+.confession {
+  color: var(--confession-color);
+  background: rgba(0, 191, 255, 0.07);
+  border-left: 4px solid #00bfff;
+  margin: 12px 0;
+  padding: 7px 0 7px 14px;
+  border-radius: 2px;
+  font-style: italic;
+}
+
+.confession-meta {
+  color: var(--meta-color);
+  font-size: 12px;
+  margin-bottom: 3px;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  letter-spacing: 0.03em;
+}
+
+.command {
+  color: var(--command-color);
+  font-weight: bold;
+  font-family: inherit;
+}
+
+.command-recognized {
+  color: var(--recognized-command);
+  font-weight: bold;
+  text-shadow: 0 0 2px #fff8;
+}
+
+.output-line {
+  color: var(--output-color);
+  font-family: inherit;
+}
+
+.error {
+  color: var(--error-color);
+  font-weight: bold;
+  text-shadow: 0 0 2px #ff537088;
+}
+
+.success {
+  color: var(--success-color);
+  font-weight: bold;
+}
+
+.prompt {
+  color: var(--prompt-color);
+  font-weight: bold;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  text-shadow: 0 0 2px #00bfff88;
+}
+
+.input-line {
+  display: flex;
+  align-items: center;
+  color: var(--text-color);
+  font-size: 15px;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  background: transparent;
+  border-radius: 2px;
+  padding: 2px 0;
+}
+
+.terminal-input {
+  background: transparent;
+  border: none;
+  color: var(--text-color);
+  font-family: inherit;
+  font-size: 15px;
+  background: transparent;
+  border-bottom: 1px solid #00bfff;
+  border-radius: 0;
+  padding: 2px 0;
+  transition: border-color 0.2s;
+}
+
+.terminal-input:focus {
+  border-bottom: 1.5px solid #4ec9b0;
+}
+
+.cursor {
+  color: #00bfff;
+  animation: blink 1s infinite;
+  margin-left: 2px;
+  font-weight: bold;
+  font-size: 16px;
+}
+
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* Improve scrollbar styling */
+.output::-webkit-scrollbar {
+  width: 8px;
+}
+
+.output::-webkit-scrollbar-track {
+  background: var(--header-bg);
+}
+
+.output::-webkit-scrollbar-thumb {
+  background: #23406c;
+  border-radius: 4px;
+}
+
+.output::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* Therapist reply styles */
+.therapist-reply {
+  color: #ff9f9f;
+  background: rgba(255, 95, 86, 0.06);
+  border-left: 4px solid #ff5f56;
+  margin: 6px 0 12px 0;
+  padding: 6px 10px;
+  border-radius: 2px;
+  font-style: normal;
+  font-family: 'Fira Code', 'Consolas', monospace;
+  letter-spacing: 0.01em;
+}
+
+/* Add responsive adjustments */
+@media (max-width: 768px) {
+  .terminal {
+    width: 99%;
+    height: 92vh;
+    min-width: 0;
+  }
+  
+  body {
+    padding: 10px;
+  }
+  
+  .terminal-title, .output, .input-line {
+    font-size: 13px;
+  }
+}
+
+/* Add reduced motion preferences for accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .cursor {
+    animation: none;
+  }
+}
