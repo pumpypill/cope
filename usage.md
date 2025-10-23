@@ -30,7 +30,7 @@ Cope Terminal is a parody, local-only web app that simulates a terminal interfac
 2. **Type `help`** to see available commands.
 3. **Submit a confession:**  
    ```
-   confess I bought the top and sold the bottom.
+   cope I bought the top and sold the bottom.
    ```
 4. **View the feed:**  
    ```

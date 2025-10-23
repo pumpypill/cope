@@ -1,6 +1,64 @@
 (function () {
 	'use strict';
 
+	// Helper: strip // and /* */ comments from JSON so JSON with header comments still parses
+	function stripJsonComments(text) {
+		// Remove /* block */ comments
+		const withoutBlock = text.replace(/\/\*[\s\S]*?\*\//g, '');
+		// Remove // line comments (but keep protocol-like patterns intact by requiring start or non-colon before //)
+		return withoutBlock.replace(/(^|[^:])\/\/.*$/gm, '$1');
+	}
+
+	// Add detection for file:// protocol and show warning
+	function detectLocalFileUsage() {
+		if (window.location.protocol === 'file:') {
+			console.warn('⚠️ Application loaded via file:// protocol. JSON loading will likely fail due to CORS restrictions.');
+			return true;
+		}
+		return false;
+	}
+
+	// Helper to load JSON with better error handling - modified to work with file:// protocol
+	async function loadJsonFile(url) {
+		try {
+			// Even if we're using file:// protocol, try to load the JSON directly
+			const response = await fetch(url);
+			if (!response.ok) {
+				throw new Error(`HTTP error! Status: ${response.status}`);
+			}
+			const text = await response.text();
+			return JSON.parse(stripJsonComments(text));
+		} catch (e) {
+			// If fetch fails (likely due to file:// protocol), try to use a synchronous XHR as fallback
+			// This is a hack but it often works with local files
+			console.warn(`Error loading ${url} with fetch, trying XHR fallback:`, e);
+			return new Promise((resolve, reject) => {
+				try {
+					const xhr = new XMLHttpRequest();
+					xhr.open('GET', url, true);
+					xhr.onload = function() {
+						if (xhr.status === 200) {
+							try {
+								const data = JSON.parse(stripJsonComments(xhr.responseText));
+								resolve(data);
+							} catch (parseError) {
+								reject(new Error(`Failed to parse ${url}: ${parseError.message}`));
+							}
+						} else {
+							reject(new Error(`XHR request failed with status ${xhr.status}`));
+						}
+					};
+					xhr.onerror = function() {
+						reject(new Error('XHR request failed'));
+					};
+					xhr.send();
+				} catch (xhrError) {
+					reject(xhrError);
+				}
+			});
+		}
+	}
+
 	// New: ResponseEngine for selecting sarcastic replies from input/output JSON
 	class ResponseEngine {
 		constructor() {
@@ -10,29 +68,26 @@
 			this.map = new Map(); // prompt -> responses[]
 			this.used = new Map(); // prompt -> Set(usedIndices)
 			this.allResponses = [];
-			this.genericFallback = [
-				"Strong conviction, weak risk. Classic.",
-				"You didn’t trade; you cosplayed a trader.",
-				"Touch grass, not buttons.",
-				"Hope isn’t a strategy; exits are.",
-				"You earned that drawdown the hard way."
-			];
+			this.genericFallback = []; // Removed fallbacks for testing
 		}
 
 		async init() {
 			try {
+				// Use the new helper function for loading JSON
 				const [prompts, outputs] = await Promise.all([
-					fetch('./input.json').then(r => r.json()),
-					fetch('./output.json').then(r => r.json())
+					loadJsonFile('./input.json'),
+					loadJsonFile('./output.json')
 				]);
+
 				this.prompts = Array.isArray(prompts) ? prompts : [];
 				this.outputs = Array.isArray(outputs) ? outputs : [];
 				this.outputs.forEach(o => this.map.set(o.prompt, o.responses || []));
 				this.allResponses = this.outputs.flatMap(o => o.responses || []);
 				this.ready = true;
+				console.log("ResponseEngine: Successfully loaded", this.prompts.length, "prompts and", this.outputs.length, "output entries");
 			} catch (e) {
-				console.warn('ResponseEngine: failed to load input/output JSON. Using fallback.', e);
-				this.ready = true;
+				console.warn('ResponseEngine: failed to load input/output JSON.', e);
+				this.ready = false;
 			}
 		}
 
@@ -77,7 +132,7 @@
 		}
 
 		getReply(message) {
-			if (!this.ready) return null;
+			if (!this.ready) return "[JSON files not loaded - check console]";
 			const best = this.findBestPrompt(message);
 			if (best) {
 				const reply = this.pickFromPrompt(best);
@@ -86,7 +141,7 @@
 			if (this.allResponses.length) {
 				return this.allResponses[Math.floor(Math.random() * this.allResponses.length)];
 			}
-			return this.genericFallback[Math.floor(Math.random() * this.genericFallback.length)];
+			return "[No matching response found - JSON may be empty]";
 		}
 	}
 
@@ -108,24 +163,30 @@
 			this.STORAGE_KEY = 'pumpfessions';
 			this.confessions = this.loadConfessions();
 
-			// Preloaded feed
-			this.preloadedConfessions = this.loadPreloadedConfessions();
+			// Preloaded feed - will be loaded from input.json
+			this.preloadedConfessions = [];
 			this.displayedConfessions = new Set();
+			this._autoFeedStarted = false; // guard to avoid double-start
 
 			// Timing
-			this.STARTUP_FEED_DELAY = 5000;
+			this.STARTUP_FEED_DELAY = 3000; // Reduced from 5000ms to 3000ms
 			this.MIN_INTERVAL = 15000;
 			this.MAX_INTERVAL = 45000;
 			this.LOADING_DELAY = 2000;
+			this.MAX_FIRST_ITEM_WAIT = 12000; // Maximum wait for first item (15s - 3s startup)
+			
+			// Add loading tracker
+			this._feedItemShown = false;
+			this._initialLoadTimer = null;
 
-			// New: response engine
+			// New: response engine and preload initialization
 			this.responseEngine = new ResponseEngine();
-			this.responseEngine.init();
+			this.initPreloadedData();
 
 			// Commands
 			this.commands = {
 				help: () => this.showHelp(),
-				confess: (msg) => this.confessAndDisplay(msg),
+				cope: (msg) => this.copeAndDisplay(msg),
 				feed: () => this.showFeed(),
 				clear: () => this.clearTerminal(),
 				about: () => this.showAbout()
@@ -133,20 +194,87 @@
 
 			this.initEvents();
 			this.clearTerminal();
-			setTimeout(() => this.startAutoFeed(), this.STARTUP_FEED_DELAY);
+			// Ensure auto-feed starts even if JSON fails or is delayed
+			this.ensureAutoFeedStarted();
 		}
 
-		// Load preloaded confessions from the pumpfessions.md content
-		loadPreloadedConfessions() {
-			// Array of preloaded confessions extracted from pumpfessions.md
-			return [
-				"Sold my wife's wedding ring for TROLL. She found out when I couldn't afford this month's rent. Moving out tomorrow.",
-				"$500 → $12k → $89 → food stamps. Thanks Cupsey.",
-				"Day 47: Still can't tell my parents I lost their retirement fund on Unstable coin. Dad keeps asking about the \"crypto gains.\"",
-				"Watched BAGWORK pump 400% while my sell order sat 0.01% too high. Pain.",
-				"/status update: living in car. portfolio up 140%. worth it. $RETIRE to the moon.",
-				"Just took out a 28k personal loan to average down on CHILLHOUSE. This can't go wrong, right?",
-			];
+		// Ensure auto-feed is scheduled exactly once
+		ensureAutoFeedStarted() {
+			if (this._autoFeedStarted) return;
+			this._autoFeedStarted = true;
+			
+			// Start auto-feed sooner
+			setTimeout(() => this.startAutoFeed(), this.STARTUP_FEED_DELAY);
+			
+			// Set a maximum wait timer to force first item to appear within 15 seconds total
+			this._initialLoadTimer = setTimeout(() => {
+				if (!this._feedItemShown) {
+					console.log("Max wait time reached, forcing first feed item to appear");
+					this.showForcedFirstItem();
+				}
+			}, this.STARTUP_FEED_DELAY + this.MAX_FIRST_ITEM_WAIT);
+		}
+
+		// New method to show a fallback item if JSON loading is too slow
+		showForcedFirstItem() {
+			const fallbackConfession = {
+				message: "Sold my wife's wedding ring for TROLL. She found out when I couldn't afford this month's rent. Moving out tomorrow.",
+				userId: "user@" + Math.random().toString(36).substring(2, 10),
+				displayTime: new Date().toLocaleString()
+			};
+			
+			this.addLine("Displaying initial feed item...");
+			this.renderConfession(fallbackConfession);
+			this._feedItemShown = true;
+			
+			// If timer still exists, clear it
+			if (this._initialLoadTimer) {
+				clearTimeout(this._initialLoadTimer);
+				this._initialLoadTimer = null;
+			}
+		}
+
+		// Load preloaded confessions from input.json
+		async initPreloadedData() {
+			try {
+				console.log('Attempting to load confessions from input.json...');
+				// Use the new helper function that works with file:// protocol
+				const data = await loadJsonFile('./input.json');
+				console.log('Raw data from input.json:', data);
+				
+				if (Array.isArray(data)) {
+					this.preloadedConfessions = data;
+					console.log(`Successfully loaded ${this.preloadedConfessions.length} confessions from input.json`);
+					// Log the first few to verify content
+					console.log('First 3 confessions:', this.preloadedConfessions.slice(0, 3));
+					// If first item hasn't been shown yet but JSON loaded successfully,
+					// show the first item right away instead of waiting
+					if (!this._feedItemShown) {
+						this.showFirstItemImmediately();
+					}
+				} else {
+					console.error('Input.json does not contain an array', data);
+					throw new Error('Input.json format invalid');
+				}
+			} catch (err) {
+				console.error('Failed to load confessions from input.json:', err);
+				
+				// Always fall back to hard-coded values from input.json
+				console.log('Using hardcoded fallback confessions from input.json');
+				this.preloadedConfessions = [
+					"Cope terminal, turned $2k into $150k on TROLL then back to $1.8k during a Zoom. Need a detox from charts and a reset routine.",
+					"Been averaging down on Cupsey for months; wife thinks it's vacation savings. How do I confess and stop adding on every red candle?",
+					"Unstable coin paid me in hypertension. Request: discipline rebuild plan and a budget that survives FOMO.",
+					"Sold my car for BAGWORK 'support' that wasn't there. How do I stop calling dips that turn into cliffs?",
+					"$Runner had me sprinting to the bottom. Give me a one-page risk plan for small accounts that doesn't need miracles."
+				];
+				console.log(`Added ${this.preloadedConfessions.length} fallback confessions`);
+			} finally {
+				// Initialize response engine regardless of success/failure
+				this.responseEngine.init();
+				// Guarantee auto-feed is running
+				this.ensureAutoFeedStarted();
+			}
 		}
 
 		// Fixed: Simplified generateUserId function to avoid stack overflow
@@ -202,7 +330,7 @@
 		showHelp() {
 			[
 				'Available commands:',
-				'  confess <message> - Post an anonymous confession',
+				'  cope <message>    - Post an anonymous confession',
 				'  feed             - View recent confessions',
 				'  clear            - Clear the terminal',
 				'  about            - About Cope Terminal',
@@ -235,9 +363,9 @@
 			}
 		}
 
-		confessAndDisplay(message) {
+		copeAndDisplay(message) {
 			if (!message || !message.trim()) {
-				this.addLine('Usage: confess <your confession>', 'error');
+				this.addLine('Usage: cope <your confession>', 'error');
 				return;
 			}
 			const sanitized = this.sanitize(message.trim());
@@ -260,7 +388,7 @@
 
 		showFeed() {
 			if (!this.confessions.length) {
-				this.addLine('No confessions found. Be the first to confess!');
+				this.addLine('No confessions found. Be the first to cope!');
 				return;
 			}
 			this.addLine('=== Local Pumpfessions ===');
@@ -293,61 +421,59 @@
 		}
 
 		renderTherapistReply(message) {
-			// Use ResponseEngine if ready; otherwise fallback to legacy list
-			const fallback = [
-				'Therapist: breathe, learn, adjust size, live to trade another day.',
-				'Therapist: note the pattern, set rules you will actually follow.',
-				'Therapist: wins don’t define you, losses don’t destroy you.',
-				'Therapist: step away, hydrate, reset—charts will still be there.',
-				'Therapist: journal this, extract the lesson, move forward.'
-			];
+			// Use ResponseEngine if ready; otherwise show error message
 			let reply = this.responseEngine?.getReply(message);
-			if (!reply) reply = fallback[Math.floor(Math.random() * fallback.length)];
+			if (!reply) reply = "[Response engine unavailable - check if JSON files loaded correctly]";
 			// Prefix to keep tone consistent
 			this.addLine(`Cope: ${reply}`, 'therapist-reply');
 		}
 
 		startAutoFeed() {
-			if (!Array.isArray(this.preloadedConfessions) || !this.preloadedConfessions.length) {
-				this.addLine('Auto-feed disabled (no preloaded confessions).');
-				return;
-			}
-
+			// Always show the loading message regardless of confession availability
 			const nextDelay = () => {
 				const skew = Math.random() ** 2;
 				return Math.floor(this.MIN_INTERVAL + (this.MAX_INTERVAL - this.MIN_INTERVAL) * skew);
 			};
 
-			const randomUserId = () => {
-				const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-				let id = '';
-				for (let i = 0; i < 16; i++) id += chars[Math.floor(Math.random() * chars.length)];
-				return `user@${id}`;
-			};
+			const randomUserId = () => this.generateRandomUserId();
 
 			const schedule = (delay) => {
 				setTimeout(() => requestAnimationFrame(tick), delay);
 			};
 
 			const tick = () => {
+				// Always show loading message
 				this.addLine('Loading latest user submission...');
+
 				setTimeout(() => {
-					// pick an undisplayed confession
-					const indices = [];
-					for (let i = 0; i < this.preloadedConfessions.length; i++) {
-						if (!this.displayedConfessions.has(i)) indices.push(i);
+					if (!Array.isArray(this.preloadedConfessions) || !this.preloadedConfessions.length) {
+						// If no confessions available, show message but continue the cycle
+						this.addLine('No preloaded confessions found. Add confessions to input.json.', 'error');
+						return schedule(nextDelay());
 					}
-					if (!indices.length) {
-						// restart rotation
+
+					// Mark that we've shown at least one item
+					this._feedItemShown = true;
+
+					// Log which confession we're about to display
+					const availableIndices = [];
+					for (let i = 0; i < this.preloadedConfessions.length; i++) {
+						if (!this.displayedConfessions.has(i)) availableIndices.push(i);
+					}
+					
+					if (availableIndices.length === 0) {
+						// Reset when all have been shown
 						this.displayedConfessions.clear();
-						for (let i = 0; i < Math.min(3, this.preloadedConfessions.length); i++) {
-							// show a few again sparsely over time
-							break;
+						console.log('All confessions have been shown. Resetting cycle.');
+						for (let i = 0; i < this.preloadedConfessions.length; i++) {
+							availableIndices.push(i);
 						}
 					}
-					const pool = indices.length ? indices : [0];
-					const idx = pool[Math.floor(Math.random() * pool.length)];
+					
+					const idx = availableIndices[Math.floor(Math.random() * availableIndices.length)];
 					this.displayedConfessions.add(idx);
+					
+					console.log(`Displaying confession #${idx}:`, this.preloadedConfessions[idx].substring(0, 50) + '...');
 
 					const confessionObj = {
 						message: this.preloadedConfessions[idx],
@@ -359,7 +485,16 @@
 				}, this.LOADING_DELAY);
 			};
 
+			// Start the cycle
 			schedule(nextDelay());
+		}
+
+		// Helper for random user IDs (reused for consistency)
+		generateRandomUserId() {
+			const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+			let id = '';
+			for (let i = 0; i < 16; i++) id += chars[Math.floor(Math.random() * chars.length)];
+			return `user@${id}`;
 		}
 
 		clearTerminal() {
