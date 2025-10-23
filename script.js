@@ -425,7 +425,7 @@
 			let reply = this.responseEngine?.getReply(message);
 			if (!reply) reply = "[Response engine unavailable - check if JSON files loaded correctly]";
 			// Prefix to keep tone consistent
-			this.addLine(`Cope: ${reply}`, 'therapist-reply');
+			this.addLine(`System: ${reply}`, 'therapist-reply');
 		}
 
 		startAutoFeed() {
