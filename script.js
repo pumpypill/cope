@@ -174,7 +174,10 @@
 			this.MAX_INTERVAL = 45000;
 			this.LOADING_DELAY = 2000;
 			this.MAX_FIRST_ITEM_WAIT = 12000; // Maximum wait for first item (15s - 3s startup)
-			
+			// Thinking delay (applies to preloaded feed and user submissions)
+			this.THINKING_DELAY_MIN = 800;
+			this.THINKING_DELAY_MAX = 2000;
+
 			// Add loading tracker
 			this._feedItemShown = false;
 			this._initialLoadTimer = null;
@@ -395,6 +398,13 @@
 			this.confessions.slice(0, 10).forEach(c => this.renderConfession(c));
 		}
 
+		getThinkingDelay() {
+			return Math.floor(
+				this.THINKING_DELAY_MIN +
+				Math.random() * (this.THINKING_DELAY_MAX - this.THINKING_DELAY_MIN)
+			);
+		}
+
 		renderConfession(confession) {
 			const message = typeof confession === 'string' ? confession : confession.message;
 			const userId = confession && confession.userId ? confession.userId : this.userId;
@@ -417,7 +427,14 @@
 			this.output.appendChild(wrap);
 			this.output.scrollTop = this.output.scrollHeight;
 
-			this.renderTherapistReply(message);
+			// Show a "thinking" placeholder, then render the reply after a short delay
+			const placeholder = this.addLine('System is thinking...', 'therapist-reply');
+			setTimeout(() => {
+				if (placeholder && placeholder.parentNode) {
+					placeholder.parentNode.removeChild(placeholder);
+				}
+				this.renderTherapistReply(message);
+			}, this.getThinkingDelay());
 		}
 
 		renderTherapistReply(message) {
