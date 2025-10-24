@@ -225,6 +225,14 @@ body {
   background: transparent;
   border-radius: 2px;
   padding: 2px 0;
+  width: 100%;
+  gap: 8px; /* spacing between prompt and input */
+}
+
+.input-line .prompt {
+  flex: 0 0 auto;         /* keep prompt at natural size */
+  white-space: nowrap;    /* avoid wrapping the prompt */
+  margin-right: 2px;
 }
 
 .terminal-input {
@@ -238,6 +246,10 @@ body {
   border-radius: 0;
   padding: 2px 0;
   transition: border-color 0.2s;
+  flex: 1 1 auto;     /* fill remaining space */
+  width: 100%;        /* allow long previews */
+  min-width: 0;       /* prevent flex overflow clipping */
+  display: block;
 }
 
 .terminal-input:focus {
@@ -302,6 +314,11 @@ body {
   
   .terminal-title, .output, .input-line {
     font-size: 13px;
+  }
+  .input-line .prompt {
+    max-width: 45vw;        /* avoid prompt dominating small screens */
+    overflow: hidden;
+    text-overflow: ellipsis; /* show ellipsis if too long */
   }
 }
 
