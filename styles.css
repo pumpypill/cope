@@ -217,7 +217,8 @@ body {
 }
 
 .input-line {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr; /* prompt | input */
   align-items: center;
   color: var(--text-color);
   font-size: 15px;
@@ -231,9 +232,9 @@ body {
 }
 
 .input-line .prompt {
-  flex: 0 0 auto;         /* keep prompt at natural size */
-  white-space: nowrap;    /* avoid wrapping the prompt */
-  margin-right: 2px;
+  white-space: nowrap;     /* avoid wrapping the prompt */
+  overflow: hidden;        /* prevent prompt from pushing input */
+  text-overflow: ellipsis; /* ellipsis if prompt is too long */
 }
 
 .terminal-input {
@@ -247,9 +248,8 @@ body {
   border-radius: 0;
   padding: 2px 0;
   transition: border-color 0.2s;
-  flex: 1 1 auto;     /* fill remaining space */
-  width: 100%;        /* allow long previews */
-  min-width: 0;       /* prevent flex overflow clipping */
+  width: 100%;         /* fill the 1fr grid column */
+  min-width: 0;        /* allow shrinking in grid */
   display: block;
   padding-right: 1.25rem; /* reserve space for visual cursor */
 }
@@ -321,7 +321,7 @@ body {
     font-size: 13px;
   }
   .input-line .prompt {
-    max-width: 45vw;        /* avoid prompt dominating small screens */
+    max-width: 45vw;         /* cap prompt column on small screens */
     overflow: hidden;
     text-overflow: ellipsis; /* show ellipsis if too long */
   }
