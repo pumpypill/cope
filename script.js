@@ -655,27 +655,47 @@
 			const msg = document.createElement('div');
 			msg.textContent = `"${message}"`;
 
+			// NEW: per-confession placeholder to keep pairing intact
+			const placeholder = document.createElement('div');
+			placeholder.className = 'therapist-reply';
+			placeholder.textContent = 'System is thinking...';
+
 			wrap.appendChild(meta);
 			wrap.appendChild(msg);
+			wrap.appendChild(placeholder); // reply will update here
 			this.output.appendChild(wrap);
 			this.output.scrollTop = this.output.scrollHeight;
 
-			// Show a "thinking" placeholder, then render the reply after a short delay
-			const placeholder = this.addLine('System is thinking...', 'therapist-reply');
+			// After a short delay, resolve the reply into this specific placeholder
 			setTimeout(() => {
-				if (placeholder && placeholder.parentNode) {
-					placeholder.parentNode.removeChild(placeholder);
-				}
-				this.renderTherapistReply(message);
+				this.renderTherapistReply(message, wrap, placeholder);
 			}, this.getThinkingDelay());
 		}
 
-		renderTherapistReply(message) {
-			// Use ResponseEngine if ready; otherwise show error message
+		// Updated to target a specific placeholder within the confession wrapper
+		renderTherapistReply(message, container, placeholderNode) {
 			let reply = this.responseEngine?.getReply(message);
 			if (!reply) reply = "[Response engine unavailable - check if JSON files loaded correctly]";
-			// Prefix to keep tone consistent
-			this.addLine(`System: ${reply}`, 'therapist-reply');
+			const text = `System: ${reply}`;
+
+			// If a placeholder for this confession exists, update it in place
+			if (placeholderNode && placeholderNode.parentNode === container) {
+				placeholderNode.textContent = text;
+				return;
+			}
+
+			// Fallback: append within the container if placeholder was removed for any reason
+			if (container) {
+				const node = document.createElement('div');
+				node.className = 'therapist-reply';
+				node.textContent = text;
+				container.appendChild(node);
+				this.output.scrollTop = this.output.scrollHeight;
+				return;
+			}
+
+			// Last resort: append to output (should not happen in normal flow)
+			this.addLine(text, 'therapist-reply');
 		}
 
 		startAutoFeed() {
