@@ -419,9 +419,6 @@
 			this.responseEngine = new ResponseEngine();
 			this.initPreloadedData();
 
-			// NEW: track the last user confession still "thinking"
-			this.pendingUserReply = null;
-
 			// Commands
 			this.commands = {
 				help: () => this.showHelp(),
@@ -607,35 +604,38 @@
 				this.addLine('Usage: cope <your confession>', 'error');
 				return;
 			}
-
-			// NEW: if a previous user reply is still "thinking", finalize it now
-			this.flushPendingUserReply();
-
 			const sanitized = this.sanitize(message.trim());
 			const confession = {
 				id: Date.now().toString(),
 				message: sanitized,
 				timestamp: new Date().toISOString(),
 				displayTime: new Date().toLocaleString(),
-				userId: this.userId,
-				_isUser: true // mark as user-originated for pending tracking
+				userId: this.userId
 			};
 			this.confessions.unshift(confession);
 			this.saveConfessions();
 			this.renderConfession(confession);
+			// removed success acknowledgement per UX request
 		}
 
-		// NEW: finalize the last pending user reply immediately (if any)
-		privateFlushReply(container, placeholderNode, msg) {
-			// renderTherapistReply updates in place when placeholderNode is provided
-			this.renderTherapistReply(msg, container, placeholderNode);
+		sanitize(input) {
+			return input.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 		}
-		flushPendingUserReply() {
-			if (!this.pendingUserReply) return;
-			const p = this.pendingUserReply;
-			clearTimeout(p.timerId);
-			this.privateFlushReply(p.container, p.placeholderNode, p.message);
-			this.pendingUserReply = null;
+
+		showFeed() {
+			if (!this.confessions.length) {
+				this.addLine('No confessions found. Be the first to cope!');
+				return;
+			}
+			this.addLine('=== Local Pumpfessions ===');
+			this.confessions.slice(0, 10).forEach(c => this.renderConfession(c));
+		}
+
+		getThinkingDelay() {
+			return Math.floor(
+				this.THINKING_DELAY_MIN +
+				Math.random() * (this.THINKING_DELAY_MAX - this.THINKING_DELAY_MIN)
+			);
 		}
 
 		renderConfession(confession) {
@@ -655,36 +655,21 @@
 			const msg = document.createElement('div');
 			msg.textContent = `"${message}"`;
 
-			// per-confession placeholder to keep pairing intact
+			// NEW: per-confession placeholder to keep pairing intact
 			const placeholder = document.createElement('div');
 			placeholder.className = 'therapist-reply';
 			placeholder.textContent = 'System is thinking...';
 
 			wrap.appendChild(meta);
 			wrap.appendChild(msg);
-			wrap.appendChild(placeholder);
+			wrap.appendChild(placeholder); // reply will update here
 			this.output.appendChild(wrap);
 			this.output.scrollTop = this.output.scrollHeight;
 
-			// Schedule reply for this specific confession
-			const delay = this.getThinkingDelay();
-			const timerId = setTimeout(() => {
+			// After a short delay, resolve the reply into this specific placeholder
+			setTimeout(() => {
 				this.renderTherapistReply(message, wrap, placeholder);
-				// clear tracker if this was the tracked pending user reply
-				if (this.pendingUserReply && this.pendingUserReply.placeholderNode === placeholder) {
-					this.pendingUserReply = null;
-				}
-			}, delay);
-
-			// NEW: only track user-originated confessions as "pending"
-			if (confession && confession._isUser) {
-				this.pendingUserReply = {
-					timerId,
-					container: wrap,
-					placeholderNode: placeholder,
-					message
-				};
-			}
+			}, this.getThinkingDelay());
 		}
 
 		// Updated to target a specific placeholder within the confession wrapper
@@ -693,10 +678,13 @@
 			if (!reply) reply = "[Response engine unavailable - check if JSON files loaded correctly]";
 			const text = `System: ${reply}`;
 
+			// If a placeholder for this confession exists, update it in place
 			if (placeholderNode && placeholderNode.parentNode === container) {
 				placeholderNode.textContent = text;
 				return;
 			}
+
+			// Fallback: append within the container if placeholder was removed for any reason
 			if (container) {
 				const node = document.createElement('div');
 				node.className = 'therapist-reply';
@@ -705,6 +693,8 @@
 				this.output.scrollTop = this.output.scrollHeight;
 				return;
 			}
+
+			// Last resort: append to output (should not happen in normal flow)
 			this.addLine(text, 'therapist-reply');
 		}
 
