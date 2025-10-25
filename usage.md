@@ -52,13 +52,8 @@ Cope Terminal is a parody, local-only web app that simulates a terminal interfac
 - The app loads prompts from input.json and snarky responses from output.json (both local files).
 - Your confession is matched to the closest prompt using simple word overlap.
 - One response is picked at random from that prompt’s response list (avoids repeats session-by-session).
-- Then a tiny local-only “brain” personalizes it:
-  - Extracts light context (amounts, budget/sleep/revenge/risk themes, occasional $TICKER if present).
-  - Picks a micro-style and applies tiny paraphrase/word swaps from a small synonyms list.
-  - Adds a short intro (“On budget: …” or “Re $TROLL: …”) and/or a one-line checklist nudge (“Guardrail: size small.”).
-  - Randomness is deterministic per message and day, so the same text is consistent within a day but feels fresh across days.
-- If augmentation would reduce clarity, the app falls back to the original line.
-- Nothing is sent to a server; all selection and augmentation happen in your browser.
+- If no good match or files unavailable, a small local fallback is used.
+- Nothing is sent to a server; all selection happens in your browser.
 
 ---
 
