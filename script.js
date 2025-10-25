@@ -378,6 +378,74 @@
 		}
 	}
 
+	class Scheduler {
+		constructor() {
+			this.tasks = []; // {id, executeAt, cb}
+			this.mainTimer = null;
+			this.worker = null;
+			this._initWorker();
+			document.addEventListener('visibilitychange', () => this.checkDueTasks());
+			// also check periodically in case worker is throttled
+			this._fallbackTick = setInterval(() => this.checkDueTasks(), 2000);
+		}
+		_initWorker() {
+			try {
+				const code = `
+					// worker: post a tick every second
+					setInterval(() => postMessage(Date.now()), 1000);
+				`;
+				const blob = new Blob([code], { type: 'application/javascript' });
+				this.worker = new Worker(URL.createObjectURL(blob));
+				this.worker.onmessage = () => this.checkDueTasks();
+			} catch (e) {
+				console.warn('Scheduler: worker unavailable, falling back to timers', e);
+				this.worker = null;
+			}
+		}
+		schedule(cb, delayMs) {
+			const id = Math.random().toString(36).slice(2, 9);
+			const executeAt = Date.now() + Math.max(0, Number(delayMs) || 0);
+			this.tasks.push({ id, executeAt, cb });
+			this._rescheduleMainTimer();
+			return id;
+		}
+		clear(id) {
+			if (!id) return;
+			this.tasks = this.tasks.filter(t => t.id !== id);
+			this._rescheduleMainTimer();
+		}
+		checkDueTasks() {
+			const now = Date.now();
+			const due = this.tasks.filter(t => t.executeAt <= now);
+			if (due.length) {
+				// run in order
+				due.sort((a, b) => a.executeAt - b.executeAt).forEach(t => {
+					try { t.cb(); } catch (e) { console.error('Scheduled task error', e); }
+				});
+				this.tasks = this.tasks.filter(t => t.executeAt > now);
+			}
+			this._rescheduleMainTimer();
+		}
+		_rescheduleMainTimer() {
+			if (this.mainTimer) {
+				clearTimeout(this.mainTimer);
+				this.mainTimer = null;
+			}
+			if (!this.tasks.length) return;
+			// next earliest
+			const nextAt = this.tasks.reduce((m, t) => Math.min(m, t.executeAt), Infinity);
+			const delay = Math.max(0, nextAt - Date.now());
+			// schedule a short main-thread timeout to guarantee eventual execution
+			this.mainTimer = setTimeout(() => this.checkDueTasks(), delay + 10);
+		}
+		destroy() {
+			if (this.worker) { this.worker.terminate(); this.worker = null; }
+			if (this.mainTimer) { clearTimeout(this.mainTimer); this.mainTimer = null; }
+			if (this._fallbackTick) { clearInterval(this._fallbackTick); this._fallbackTick = null; }
+			this.tasks = [];
+		}
+	}
+
 	class TerminalApp {
 		constructor() {
 			this.input = document.getElementById('terminal-input');
@@ -418,6 +486,9 @@
 			// New: response engine and preload initialization
 			this.responseEngine = new ResponseEngine();
 			this.initPreloadedData();
+
+			// New scheduler instance used for thinking/auto-feed timers
+			this.scheduler = new Scheduler();
 
 			// NEW: track the last user confession still "thinking"
 			this.pendingUserReply = null;
@@ -625,19 +696,7 @@
 			this.renderConfession(confession);
 		}
 
-		// NEW: finalize the last pending user reply immediately (if any)
-		privateFlushReply(container, placeholderNode, msg) {
-			// renderTherapistReply updates in place when placeholderNode is provided
-			this.renderTherapistReply(msg, container, placeholderNode);
-		}
-		flushPendingUserReply() {
-			if (!this.pendingUserReply) return;
-			const p = this.pendingUserReply;
-			clearTimeout(p.timerId);
-			this.privateFlushReply(p.container, p.placeholderNode, p.message);
-			this.pendingUserReply = null;
-		}
-
+		// Updated renderConfession scheduling to use scheduler
 		renderConfession(confession) {
 			const message = typeof confession === 'string' ? confession : confession.message;
 			const userId = confession && confession.userId ? confession.userId : this.userId;
@@ -666,9 +725,9 @@
 			this.output.appendChild(wrap);
 			this.output.scrollTop = this.output.scrollHeight;
 
-			// Schedule reply for this specific confession
+			// Schedule reply for this specific confession using scheduler
 			const delay = this.getThinkingDelay();
-			const timerId = setTimeout(() => {
+			const taskId = this.scheduler.schedule(() => {
 				this.renderTherapistReply(message, wrap, placeholder);
 				// clear tracker if this was the tracked pending user reply
 				if (this.pendingUserReply && this.pendingUserReply.placeholderNode === placeholder) {
@@ -679,7 +738,7 @@
 			// NEW: only track user-originated confessions as "pending"
 			if (confession && confession._isUser) {
 				this.pendingUserReply = {
-					timerId,
+					taskId,           // scheduler id (not raw timeout)
 					container: wrap,
 					placeholderNode: placeholder,
 					message
@@ -687,7 +746,21 @@
 			}
 		}
 
-		// Updated to target a specific placeholder within the confession wrapper
+		// finalize the last pending user reply immediately (if any)
+		privateFlushReply(container, placeholderNode, msg) {
+			// renderTherapistReply updates in place when placeholderNode is provided
+			this.renderTherapistReply(msg, container, placeholderNode);
+		}
+		flushPendingUserReply() {
+			if (!this.pendingUserReply) return;
+			const p = this.pendingUserReply;
+			// cancel scheduled task via scheduler
+			if (p.taskId && this.scheduler) this.scheduler.clear(p.taskId);
+			// render immediately
+			this.privateFlushReply(p.container, p.placeholderNode, p.message);
+			this.pendingUserReply = null;
+		}
+
 		renderTherapistReply(message, container, placeholderNode) {
 			let reply = this.responseEngine?.getReply(message);
 			if (!reply) reply = "[Response engine unavailable - check if JSON files loaded correctly]";
@@ -717,19 +790,18 @@
 
 			const randomUserId = () => this.generateRandomUserId();
 
-			const schedule = (delay) => {
-				setTimeout(() => requestAnimationFrame(tick), delay);
-			};
-
 			const tick = () => {
 				// Always show loading message
 				this.addLine('Loading latest user submission...');
 
-				setTimeout(() => {
+				// use scheduler to delay the inner loading logic uniformly
+				const inner = () => {
 					if (!Array.isArray(this.preloadedConfessions) || !this.preloadedConfessions.length) {
 						// If no confessions available, show message but continue the cycle
 						this.addLine('No preloaded confessions found. Add confessions to input.json.', 'error');
-						return schedule(nextDelay());
+						// schedule next cycle
+						this.scheduler.schedule(() => requestAnimationFrame(tick), nextDelay());
+						return;
 					}
 
 					// Mark that we've shown at least one item
@@ -761,12 +833,17 @@
 						displayTime: new Date().toLocaleString()
 					};
 					this.renderConfession(confessionObj);
-					schedule(nextDelay());
-				}, this.LOADING_DELAY);
+
+					// schedule next cycle
+					this.scheduler.schedule(() => requestAnimationFrame(tick), nextDelay());
+				};
+
+				// schedule inner() after LOADING_DELAY using scheduler to be resilient to throttling
+				this.scheduler.schedule(inner, this.LOADING_DELAY);
 			};
 
-			// Start the cycle
-			schedule(nextDelay());
+			// Start the cycle now (use requestAnimationFrame once for consistent init)
+			requestAnimationFrame(tick);
 		}
 
 		// Helper for random user IDs (reused for consistency)
